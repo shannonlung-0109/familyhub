@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>Family Hub – Weekly Planner</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#f7f8fc;min-height:100vh;}
+button:active{opacity:0.85;}
+textarea,input,select{font-family:inherit;}
+pre{font-family:inherit;}
+.cal-day{min-height:60px;padding:3px;border-right:1px solid #e8eaf6;border-bottom:1px solid #e8eaf6;cursor:pointer;transition:background 0.1s;}
+.cal-day:hover{background:#f0f4ff;}
+.cal-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin:1px;}
+.week-slot{border-bottom:1px solid #f0f0f0;min-height:52px;display:flex;align-items:flex-start;padding:6px 0;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect } = React;
+
+// ── Firebase ──────────────────────────────────────────────────────────────────
+const FB_URL = "https://family-hub-ffc27-default-rtdb.asia-southeast1.firebasedatabase.app";
+async function cloudLoad(id){const r=await fetch(FB_URL+"/rooms/"+id+".json");if(!r.ok)throw new Error(r.status);const d=await r.json();if(!d)throw new Error("Not found");return d;}
+async function cloudSave(id,p){const r=await fetch(FB_URL+"/rooms/"+id+".json",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(p)});if(!r.ok)throw new Error(r.status);}
+async function cloudCreate(p){const id=Math.random().toString(36).slice(2,10)+Math.random().toString(36).slice(2,10);await cloudSave(id,p);return id;}
+function localSave(d){try{localStorage.setItem("ftItems",JSON.stringify(d));}catch(e){}}
+function localLoad(){try{const r=localStorage.getItem("ftItems");return r?JSON.parse(r):null;}catch(e){return null;}}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const CATEGORIES=["⚽ Sport","📚 Class","🏥 Appointment","🎉 Event","🧹 Chore","📌 Other","🏖️ Holiday","📆 Term Break"];
+const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const MEMBERS=["Everyone","Shannon","Wei","Mae","Kay"];
+const MONTH_NAMES=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const ICON_OPTIONS=["⚽","🏀","🎾","🏊","🚴","🏋️","🤸","⛷️","🎹","📚","✏️","🎨","🎭","🎸","🎺","🎻","🎤","📖","🏥","💊","🦷","❤️","🩹","🎉","🎂","🎁","🎊","🥳","🎈","🪅","🧹","🍳","🛒","🚗","🏠","🌿","🐕","🐈","📌","⭐","🔔","📅","💡","📝","🗓️","📋","🌍","✈️","🏖️","⛺","🎯","🏆","🥇","🎮","🧩","🎲","🚢","🎠","🌳","👧","🤖","📋","🛒","💃","🎵","🏃"];
+const COLORS={"⚽ Sport":"#e8f5e9","📚 Class":"#e3f2fd","🏥 Appointment":"#fce4ec","🎉 Event":"#fff8e1","🧹 Chore":"#f3e5f5","📌 Other":"#f5f5f5","🏖️ Holiday":"#fff3e0","📆 Term Break":"#e0f7fa"};
+const BORDER={"⚽ Sport":"#66bb6a","📚 Class":"#42a5f5","🏥 Appointment":"#ef5350","🎉 Event":"#ffa726","🧹 Chore":"#ab47bc","📌 Other":"#bdbdbd","🏖️ Holiday":"#ff7043","📆 Term Break":"#26a69a"};
+const MEMBER_COLORS={"Shannon":"#e91e63","Wei":"#1a73e8","Mae":"#9c27b0","Kay":"#ff9800","Everyone":"#607d8b"};
+const defaultForm={title:"",category:"⚽ Sport",icon:"⚽",day:"Mon",date:"",endDate:"",time:"",endTime:"",recurrence:"none",location:"",member:"Everyone",members:[],note:"",dateLabel:""};
+const inp={padding:"10px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14,outline:"none",width:"100%",boxSizing:"border-box",background:"#fafafa"};
+
+// ── Parser ────────────────────────────────────────────────────────────────────
+const MONTH_MAP={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11,january:0,february:1,march:2,april:3,june:5,july:6,august:7,september:8,october:9,november:10,december:11};
+const DAY_NAMES={mon:"Mon",tue:"Tue",wed:"Wed",thu:"Thu",fri:"Fri",sat:"Sat",sun:"Sun",monday:"Mon",tuesday:"Tue",wednesday:"Wed",thursday:"Thu",friday:"Fri",saturday:"Sat",sunday:"Sun"};
+function parseTime(s){const m=s.match(/(\d{1,2})[.:h]?(\d{2})?\s*(am|pm)?/i);if(!m)return"";let h=parseInt(m[1]);const min=m[2]||"00";const mer=(m[3]||"").toLowerCase();if(mer==="pm"&&h<12)h+=12;if(mer==="am"&&h===12)h=0;return String(h).padStart(2,"0")+":"+min;}
+function detectCat(t){const l=t.toLowerCase();if(/cruise|disney|trip|vacation|bday|birthday|party|playdate|play\s*date|scout|camp/.test(l))return"🎉 Event";if(/term\s*break|school\s*break/.test(l))return"📆 Term Break";if(/public\s*holi|ph\b/.test(l))return"🏖️ Holiday";if(/gym|gymnastic|swim|tennis|soccer|football|rugby|basketball|sport|training|practice/.test(l))return"⚽ Sport";if(/piano|class|lesson|tutor|ptm|parent|teacher|meeting/.test(l))return"📚 Class";if(/doctor|dentist|appoint|clinic|hospital/.test(l))return"🏥 Appointment";if(/chore|clean|grocery|laundry|errand/.test(l))return"🧹 Chore";return"📌 Other";}
+function detectIcon(t,cat){const l=t.toLowerCase();const map=[[/piano/,"🎹"],[/swim/,"🏊"],[/gym|gymnastic/,"🤸"],[/soccer|football/,"⚽"],[/basketball/,"🏀"],[/tennis/,"🎾"],[/cruise|ship/,"🚢"],[/disney/,"🎠"],[/scout|forest|camp/,"🌳"],[/bday|birthday/,"🎂"],[/party/,"🎉"],[/playdate|play\s*date/,"👧"],[/robot/,"🤖"],[/doctor/,"🏥"],[/dentist/,"🦷"],[/meeting|ptm/,"📋"],[/grocery/,"🛒"],[/dance/,"💃"],[/music/,"🎵"],[/park|skypark/,"🌳"],[/travel|flight/,"✈️"]];for(const[r,i]of map)if(r.test(l))return i;return{"⚽ Sport":"⚽","📚 Class":"📚","🏥 Appointment":"🏥","🎉 Event":"🎉","🧹 Chore":"🧹","📌 Other":"📌","🏖️ Holiday":"🏖️","📆 Term Break":"📆"}[cat]||"📌";}
+function getDOW(d,mon){const idx=MONTH_MAP[mon.toLowerCase()];if(idx===undefined)return"";return["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(new Date().getFullYear(),idx,parseInt(d)).getDay()];}
+function getDateStr(d,mon){const idx=MONTH_MAP[mon.toLowerCase()];if(idx===undefined)return"";const yr=new Date().getFullYear();return yr+"-"+String(idx+1).padStart(2,"0")+"-"+String(parseInt(d)).padStart(2,"0");}
+function parseLine(line){
+  let raw=line.replace(/^[\s\-\*•·]+/,"").trim();
+  if(!raw||raw.length<3)return null;
+  const textOnly=raw.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g,"").replace(/[\u2600-\u27FF]/g,"").trim();
+  if(!textOnly)return null;
+  let dateLabel="",day="",date="",time="",endTime="",title=textOnly,member="Everyone",members=[];
+  const rng=textOnly.match(/^(\d{1,2})\s*[-–]\s*(\d{1,2})\s+([A-Za-z]+)(.*)/);
+  const sng=textOnly.match(/^(\d{1,2})\s+([A-Za-z]+)(.*)/);
+  if(rng){const[,d1,d2,mon,rest]=rng;dateLabel=d1+"-"+d2+" "+mon;day=getDOW(d1,mon);date=getDateStr(d1,mon);title=rest.replace(/^[\s\-–:,]+/,"").trim();}
+  else if(sng){const[,d1,mon,rest]=sng;if(MONTH_MAP[mon.toLowerCase()]!==undefined){dateLabel=d1+" "+mon;day=getDOW(d1,mon);date=getDateStr(d1,mon);title=rest.replace(/^[\s\-–:,]+/,"").trim();}}
+  const nd=title.match(/^(mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b[,\s]*/i);
+  if(nd){day=DAY_NAMES[nd[1].toLowerCase()]||day;title=title.slice(nd[0].length).trim();}
+  const tmFull=title.match(/(\d{1,2}[.:h]?\d{0,2}\s*(?:am|pm))\s*[-–to]+\s*(\d{1,2}[.:h]?\d{0,2}\s*(?:am|pm))/i);
+  const tmSingle=title.match(/(\d{1,2})[.:h]?(\d{2})?\s*(am|pm)/i);
+  if(tmFull){time=parseTime(tmFull[1]);endTime=parseTime(tmFull[2]);title=title.replace(tmFull[0],"").trim();}
+  else if(tmSingle){time=parseTime(tmSingle[0]);title=title.replace(tmSingle[0],"").trim();}
+  for(const n of["shannon","wei","mae","kay"]){if(new RegExp("\\b"+n+"\\b","i").test(title)){const p=n.charAt(0).toUpperCase()+n.slice(1);if(!members.includes(p))members.push(p);}}
+  member=members.length===1?members[0]:members.length>1?members.join(", "):"Everyone";
+  let location="";
+  const at=title.match(/@\s*(.+)/);const venue=title.match(/\b(SkyPark|Aquatic|Centre|Center|School|Park|Mall|Club|Stadium|Hospital)\b.*/i);
+  if(at){location=at[1].trim();title=title.replace(at[0],"").trim();}
+  else if(venue){location=venue[0].trim();title=title.replace(venue[0],"").trim();}
+  title=title.replace(/^[\s\-–:,]+|[\s\-–:,]+$/g,"").trim();
+  const category=detectCat(raw);const icon=detectIcon(raw,category);
+  return{title:title||"Event",category,icon,day,date,time,endTime,location,member,members,note:"",dateLabel,id:Date.now()+Math.random()};
+}
+function parseScheduleText(text){return text.split(/\n/).map(l=>l.trim()).filter(Boolean).filter(l=>!/^\*?20\d\d\*?$/.test(l)&&l.length>=4).map(parseLine).filter(Boolean).filter(p=>p.title.length>0);}
+
+// ── Calendar helpers ───────────────────────────────────────────────────────────
+function getDaysInMonth(year,month){return new Date(year,month+1,0).getDate();}
+function getFirstDOW(year,month){return new Date(year,month,1).getDay();}
+function itemsForDate(items,dateStr){
+  if(!dateStr)return[];
+  const d=new Date(dateStr+"T00:00:00");
+  const dow=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()];
+  return items.filter(i=>{
+    // date range (holiday/term break spanning multiple days)
+    if(i.date&&i.endDate&&i.recurrence!=="weekly"){
+      return dateStr>=i.date&&dateStr<=i.endDate;
+    }
+    // exact single date (one-off, no end date)
+    if(i.date&&!i.endDate&&i.recurrence!=="weekly"){
+      return i.date===dateStr;
+    }
+    // weekly recurrence: must match day of week AND be on/after start date AND on/before end date if set
+    if(i.recurrence==="weekly"){
+      const dowMatch=i.day===dow;
+      const afterStart=!i.date||(dateStr>=i.date);
+      const beforeEnd=!i.endDate||(dateStr<=i.endDate);
+      return dowMatch&&afterStart&&beforeEnd;
+    }
+    // no date set at all — show on matching day of week every week
+    if(!i.date&&!i.endDate&&i.day===dow)return true;
+    return false;
+  });
+}
+function itemsForWeek(items,weekDates){
+  return weekDates.map(({dateStr,dow})=>({
+    dateStr,dow,
+    events:itemsForDate(items,dateStr)
+  }));
+}
+
+// ── Sample data ───────────────────────────────────────────────────────────────
+const today=new Date();
+const yr=today.getFullYear();
+const mo=String(today.getMonth()+1).padStart(2,"0");
+const SAMPLE=[];
+
+// ── MemberTag ─────────────────────────────────────────────────────────────────
+function MemberTag({name,small}){
+  const color=MEMBER_COLORS[name]||"#607d8b";
+  return <span style={{background:color+"22",color,border:"1px solid "+color+"44",borderRadius:20,padding:small?"1px 6px":"2px 8px",fontSize:small?10:12,fontWeight:600,whiteSpace:"nowrap"}}>{name}</span>;
+}
+
+// ── EventCard ─────────────────────────────────────────────────────────────────
+function EventCard({item,onEdit,onDelete,compact}){
+  const mems=item.members&&item.members.length>0?item.members:[item.member||"Everyone"];
+  return(
+    <div style={{background:COLORS[item.category]||"#f5f5f5",borderLeft:"3px solid "+(BORDER[item.category]||"#bbb"),borderRadius:"0 10px 10px 0",padding:compact?"6px 10px":"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",boxShadow:"0 1px 3px rgba(0,0,0,0.05)",marginBottom:compact?4:6}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+          <span style={{fontSize:compact?16:20}}>{item.icon}</span>
+          <span style={{fontSize:compact?13:15,fontWeight:600,color:"#1a1a2e",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.title}</span>
+          {mems.filter(m=>m!=="Everyone").map(m=><MemberTag key={m} name={m} small={compact}/>)}
+        </div>
+        {!compact&&<div style={{fontSize:12,color:"#555",marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
+          {item.time&&<span>🕐 {item.time}{item.endTime?" – "+item.endTime:""}</span>}
+          {item.endDate&&item.date&&<span>📅 {item.date} → {item.endDate}</span>}
+          {item.recurrence==="weekly"&&<span style={{background:"#e3f2fd",color:"#1565c0",borderRadius:6,padding:"1px 6px",fontSize:11,fontWeight:600}}>🔁 Weekly</span>}
+          {item.location&&<span>📍 {item.location}</span>}
+        </div>}
+        {compact&&item.time&&<div style={{fontSize:11,color:"#666"}}>🕐 {item.time}{item.endTime?" – "+item.endTime:""}</div>}
+        {!compact&&item.note&&<div style={{fontSize:12,color:"#777",marginTop:3}}>💬 {item.note}</div>}
+      </div>
+      {!compact&&<div style={{display:"flex",gap:5,marginLeft:8,flexShrink:0}}>
+        <button onClick={()=>onEdit(item)} style={{background:"rgba(0,0,0,0.07)",border:"none",borderRadius:7,padding:"5px 8px",cursor:"pointer",fontSize:13}}>✏️</button>
+        <button onClick={()=>onDelete(item.id)} style={{background:"rgba(0,0,0,0.07)",border:"none",borderRadius:7,padding:"5px 8px",cursor:"pointer",fontSize:13}}>🗑</button>
+      </div>}
+    </div>
+  );
+}
+
+// ── MonthView ─────────────────────────────────────────────────────────────────
+function MonthView({items,onDayClick,selectedDate}){
+  const [viewYear,setViewYear]=useState(new Date().getFullYear());
+  const [viewMonth,setViewMonth]=useState(new Date().getMonth());
+  const daysInMonth=getDaysInMonth(viewYear,viewMonth);
+  const firstDOW=getFirstDOW(viewYear,viewMonth);
+  const todayStr=new Date().toISOString().slice(0,10);
+  const cells=[];
+  for(let i=0;i<firstDOW;i++)cells.push(null);
+  for(let d=1;d<=daysInMonth;d++)cells.push(d);
+  while(cells.length%7!==0)cells.push(null);
+
+  return(
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+        <button onClick={()=>{if(viewMonth===0){setViewMonth(11);setViewYear(y=>y-1);}else setViewMonth(m=>m-1);}} style={{background:"#e8eaf6",border:"none",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:16}}>‹</button>
+        <span style={{fontWeight:700,fontSize:16,color:"#1a1a2e"}}>{MONTH_NAMES[viewMonth]} {viewYear}</span>
+        <button onClick={()=>{if(viewMonth===11){setViewMonth(0);setViewYear(y=>y+1);}else setViewMonth(m=>m+1);}} style={{background:"#e8eaf6",border:"none",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:16}}>›</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",background:"#e8eaf6",border:"1px solid #e8eaf6",borderRadius:"10px 10px 0 0",overflow:"hidden"}}>
+        {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(
+          <div key={d} style={{textAlign:"center",fontSize:11,fontWeight:700,color:"#888",padding:"6px 2px",background:"#f7f8fc",borderRight:"1px solid #e8eaf6"}}>{d}</div>
+        ))}
+        {cells.map((day,i)=>{
+          if(!day)return<div key={"e"+i} style={{background:"#fafafa",borderRight:"1px solid #e8eaf6",borderBottom:"1px solid #e8eaf6",minHeight:60}}/>;
+          const dateStr=viewYear+"-"+String(viewMonth+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");
+          const evts=itemsForDate(items,dateStr);
+          const isToday=dateStr===todayStr;
+          const isSel=dateStr===selectedDate;
+          return(
+            <div key={day} className="cal-day" onClick={()=>onDayClick(dateStr)}
+              style={{background:isSel?"#e8f0fe":isToday?"#fff8e1":"#fff",borderRight:"1px solid #e8eaf6",borderBottom:"1px solid #e8eaf6",minHeight:60,padding:3,cursor:"pointer"}}>
+              <div style={{fontSize:12,fontWeight:isToday?700:400,color:isToday?"#1a73e8":isSel?"#1a73e8":"#333",width:20,height:20,borderRadius:"50%",background:isToday?"#1a73e8":"transparent",color:isToday?"#fff":"inherit",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:2}}>{day}</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:1}}>
+                {evts.slice(0,3).map((e,ei)=>(
+                  <div key={ei} style={{background:BORDER[e.category]||"#999",borderRadius:2,fontSize:9,color:"#fff",padding:"1px 3px",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.4}}>
+                    {e.icon} {e.title}
+                  </div>
+                ))}
+                {evts.length>3&&<div style={{fontSize:9,color:"#888"}}>+{evts.length-3}</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── WeekView ──────────────────────────────────────────────────────────────────
+function WeekView({items,onDayClick}){
+  const [weekStart,setWeekStart]=useState(()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());return d;});
+  const weekDates=Array.from({length:7},(_,i)=>{
+    const d=new Date(weekStart);d.setDate(d.getDate()+i);
+    const dateStr=d.toISOString().slice(0,10);
+    const dow=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()];
+    return{dateStr,dow,day:d.getDate(),month:MONTH_NAMES[d.getMonth()].slice(0,3)};
+  });
+  const todayStr=new Date().toISOString().slice(0,10);
+  const weekData=itemsForWeek(items,weekDates);
+
+  const prevWeek=()=>{const d=new Date(weekStart);d.setDate(d.getDate()-7);setWeekStart(d);};
+  const nextWeek=()=>{const d=new Date(weekStart);d.setDate(d.getDate()+7);setWeekStart(d);};
+
+  return(
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+        <button onClick={prevWeek} style={{background:"#e8eaf6",border:"none",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:16}}>‹</button>
+        <span style={{fontWeight:700,fontSize:15,color:"#1a1a2e"}}>{weekDates[0].month} {weekDates[0].day} – {weekDates[6].month} {weekDates[6].day}</span>
+        <button onClick={nextWeek} style={{background:"#e8eaf6",border:"none",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:16}}>›</button>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:0,background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+        {weekData.map(({dateStr,dow,day,month,events})=>{
+          const isToday=dateStr===todayStr;
+          return(
+            <div key={dateStr} className="week-slot" style={{padding:"8px 12px",borderBottom:"1px solid #f0f0f0",background:isToday?"#f0f6ff":"#fff",cursor:"pointer"}} onClick={()=>onDayClick(dateStr)}>
+              <div style={{width:52,flexShrink:0}}>
+                <div style={{fontSize:11,color:isToday?"#1a73e8":"#888",fontWeight:700,textTransform:"uppercase"}}>{dow}</div>
+                <div style={{fontSize:20,fontWeight:700,color:isToday?"#1a73e8":"#1a1a2e",lineHeight:1.2}}>{day}</div>
+                <div style={{fontSize:10,color:"#aaa"}}>{month}</div>
+              </div>
+              <div style={{flex:1,paddingLeft:10}}>
+                {events.length===0?<div style={{fontSize:12,color:"#ccc",paddingTop:6}}>No events</div>:
+                  events.map(e=>(
+                    <div key={e.id} style={{background:COLORS[e.category]||"#f5",borderLeft:"3px solid "+(BORDER[e.category]||"#bbb"),borderRadius:"0 8px 8px 0",padding:"4px 8px",marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{fontSize:14}}>{e.icon}</span>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:600,color:"#1a1a2e",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.title}</div>
+                        {e.time&&<div style={{fontSize:11,color:"#666"}}>🕐 {e.time}{e.endTime?" – "+e.endTime:""}</div>}
+                      </div>
+                      {(e.members||[]).filter(m=>m!=="Everyone").map(m=><MemberTag key={m} name={m} small/>)}
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
+function App(){
+  const [items,setItems]=useState(SAMPLE);
+  const [form,setForm]=useState(defaultForm);
+  const [editId,setEditId]=useState(null);
+  const [showForm,setShowForm]=useState(false);
+  const [showIconPicker,setShowIconPicker]=useState(false);
+  const [copied,setCopied]=useState(false);
+  const [filterMember,setFilterMember]=useState("All");
+  const [activeTab,setActiveTab]=useState("month");
+  const [selectedDate,setSelectedDate]=useState(null);
+  const [pastedText,setPastedText]=useState("");
+  const [importResult,setImportResult]=useState(null);
+  const [importError,setImportError]=useState("");
+  const [selectedToAdd,setSelectedToAdd]=useState([]);
+  const fileRef=useRef();
+
+  // Cloud sync
+  const [binId,setBinId]=useState(()=>{try{return localStorage.getItem("familyBinId")||"";}catch(e){return"";}});
+  const [binInput,setBinInput]=useState("");
+  const [syncStatus,setSyncStatus]=useState("idle");
+  const [showSync,setShowSync]=useState(false);
+  const [syncError,setSyncError]=useState("");
+  const [justCopied,setJustCopied]=useState(false);
+  const saveTimer=useRef(null);
+
+  useEffect(()=>{
+    const id=localStorage.getItem("familyBinId");
+    if(id){setSyncStatus("loading");cloudLoad(id).then(d=>{if(d&&d.items)setItems(d.items);setSyncStatus("idle");}).catch(()=>{setSyncStatus("error");setSyncError("Could not load.");const s=localLoad();if(s&&s.length>0)setItems(s);});}
+    else{const s=localLoad();if(s&&s.length>0)setItems(s);}
+  },[]);
+
+  useEffect(()=>{
+    localSave(items);
+    if(!binId)return;
+    clearTimeout(saveTimer.current);
+    saveTimer.current=setTimeout(()=>{setSyncStatus("saving");cloudSave(binId,{items}).then(()=>{setSyncStatus("saved");setTimeout(()=>setSyncStatus("idle"),2000);}).catch(e=>{setSyncStatus("error");setSyncError(e.message);});},1500);
+    return()=>clearTimeout(saveTimer.current);
+  },[items,binId]);
+
+  useEffect(()=>{
+    if(!binId)return;
+    const p=setInterval(()=>{cloudLoad(binId).then(d=>{if(d&&d.items)setItems(prev=>JSON.stringify(prev)!==JSON.stringify(d.items)?d.items:prev);}).catch(()=>{});},20000);
+    return()=>clearInterval(p);
+  },[binId]);
+
+  const handleCreateRoom=()=>{setSyncStatus("loading");setSyncError("");cloudCreate({items}).then(id=>{setBinId(id);try{localStorage.setItem("familyBinId",id);}catch(e){}setSyncStatus("saved");setTimeout(()=>setSyncStatus("idle"),2000);}).catch(()=>{setSyncStatus("error");setSyncError("Could not create room.");});};
+  const handleJoinRoom=()=>{const id=binInput.trim();if(!id)return;setSyncStatus("loading");setSyncError("");cloudLoad(id).then(d=>{if(!d||!d.items)throw new Error();setItems(d.items);setBinId(id);try{localStorage.setItem("familyBinId",id);}catch(e){}setSyncStatus("saved");setShowSync(false);setBinInput("");setTimeout(()=>setSyncStatus("idle"),2000);}).catch(()=>{setSyncStatus("error");setSyncError("Could not join. Check the Room ID.");});};
+  const handleLeaveRoom=()=>{setBinId("");try{localStorage.removeItem("familyBinId");}catch(e){}setSyncStatus("idle");setSyncError("");setShowSync(false);};
+  const handleCopyRoomId=()=>{navigator.clipboard.writeText(binId).then(()=>{setJustCopied(true);setTimeout(()=>setJustCopied(false),2000);});};
+
+  const filteredItems=filterMember==="All"?items:items.filter(i=>i.member==="Everyone"||(i.member||"").includes(filterMember));
+
+  const handleSave=()=>{
+    if(!form.title.trim())return;
+    let n;if(editId!==null){n=items.map(i=>i.id===editId?{...form,id:editId}:i);setEditId(null);}else{n=[...items,{...form,id:Date.now()}];}
+    setItems(n);setForm(defaultForm);setShowForm(false);
+  };
+  const handleEdit=(item)=>{setForm({...item,members:item.members||[]});setEditId(item.id);setShowForm(true);setActiveTab("list");};
+  const handleDelete=(id)=>setItems(items.filter(i=>i.id!==id));
+
+  const handleDayClick=(dateStr)=>{
+    setSelectedDate(dateStr===selectedDate?null:dateStr);
+    if(dateStr!==selectedDate)setActiveTab("month");
+  };
+
+  const isDup=(a,ex)=>{const n=s=>(s||"").toLowerCase().trim();return ex.some(e=>n(e.title)===n(a.title)&&n(e.day)===n(a.day)&&n(e.dateLabel)===n(a.dateLabel));};
+
+  const handleFileUpload=async(e)=>{
+    const f=e.target.files[0];if(!f)return;
+    const isImage=f.type.startsWith("image/"),isPDF=f.type==="application/pdf";
+    if(isImage||isPDF){
+      setImportError("Screenshot/PDF import requires an API key. Please paste your schedule as text below instead.");
+    }else{
+      setPastedText(await f.text());
+    }
+  };
+
+  const handleExtract=()=>{
+    setImportError("");setImportResult(null);setSelectedToAdd([]);
+    try{
+      const acts=parseScheduleText(pastedText);
+      if(!acts.length){setImportError("No events found.");return;}
+      const f2=acts.filter(a=>!isDup(a,items));const dc=acts.length-f2.length;
+      if(!f2.length){setImportError("All items already in your schedule.");return;}
+      setImportResult({activities:f2,summary:"Found "+f2.length+" new item"+(f2.length!==1?"s":"")+(dc?" · "+dc+" duplicate"+(dc!==1?"s":"")+" removed":"")});
+      setSelectedToAdd(f2.map((_,i)=>i));
+    }catch(e){setImportError("Parse error: "+e.message);}
+  };
+
+  const handleAddSelected=()=>{
+    const toAdd=importResult.activities.filter((_,i)=>selectedToAdd.includes(i)).map(a=>({...a,id:Date.now()+Math.random()}));
+    setItems(prev=>[...prev,...toAdd]);setImportResult(null);setPastedText("");setSelectedToAdd([]);setActiveTab("list");
+  };
+
+  const generateWhatsApp=()=>{
+    const lines=["🗓 *Family Schedule Update*\n"];
+    const sp=items.filter(i=>i.category==="🏖️ Holiday"||i.category==="📆 Term Break");
+    if(sp.length){lines.push("*📌 Dates to Note*");sp.forEach(i=>lines.push("  "+i.icon+" "+i.title+(i.dateLabel?" – "+i.dateLabel:"")+(i.note?" ("+i.note+")":"")));lines.push("");}
+    const byDay=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+    byDay.forEach(day=>{
+      const di=items.filter(i=>i.day===day&&i.category!=="🏖️ Holiday"&&i.category!=="📆 Term Break");
+      if(!di.length)return;lines.push("*"+day+"*");
+      di.forEach(i=>{let l="  "+i.icon+" "+i.title;if(i.dateLabel)l+=" ("+i.dateLabel+")";if(i.date&&i.endDate)l+=" ("+i.date+" → "+i.endDate+")";if(i.recurrence==="weekly")l+=" 🔁";if(i.time)l+=" "+i.time+(i.endTime?"-"+i.endTime:"");if(i.member!=="Everyone")l+=" ("+i.member+")";if(i.location)l+="\n    📍 "+i.location;if(i.note)l+="\n    💬 "+i.note;lines.push(l);});
+      lines.push("");
+    });
+    lines.push("_Sent via Family Tracker_ ✅");return lines.join("\n");
+  };
+  const handleCopy=()=>{navigator.clipboard.writeText(generateWhatsApp()).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);});};
+
+  const syncLabel={idle:binId?"☁️ Synced":"☁️ Sync",saving:"⏳ Saving…",saved:"✅ Saved",loading:"⏳ Loading…",error:"⚠️ Error"}[syncStatus];
+
+  const selectedDayEvents=selectedDate?itemsForDate(filteredItems,selectedDate):[];
+
+  return(
+    <div style={{fontFamily:"'Segoe UI',system-ui,sans-serif",background:"#f7f8fc",minHeight:"100vh",paddingBottom:80}}>
+      {/* Header */}
+      <div style={{background:"linear-gradient(135deg,#1a73e8 0%,#0d47a1 100%)",padding:"20px 16px 16px",color:"#fff"}}>
+        <div style={{maxWidth:600,margin:"0 auto"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+            <div>
+              <div style={{fontSize:11,opacity:0.8,letterSpacing:1,textTransform:"uppercase"}}>Family Hub</div>
+              <h1 style={{margin:"2px 0 0",fontSize:22,fontWeight:700}}>Weekly Planner</h1>
+            </div>
+            <button onClick={()=>setShowSync(!showSync)} style={{background:"rgba(255,255,255,0.18)",border:"1.5px solid rgba(255,255,255,0.5)",borderRadius:10,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              {syncLabel}
+            </button>
+          </div>
+          {/* Member filter pills */}
+          <div style={{display:"flex",gap:6,marginTop:12,flexWrap:"wrap"}}>
+            {["All",...MEMBERS.filter(m=>m!=="Everyone")].map(m=>(
+              <button key={m} onClick={()=>setFilterMember(m)}
+                style={{padding:"4px 12px",borderRadius:20,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,
+                  background:filterMember===m?(MEMBER_COLORS[m]||"#fff"):"rgba(255,255,255,0.2)",
+                  color:filterMember===m?"#fff":"rgba(255,255,255,0.9)"}}>
+                {m}
+              </button>
+            ))}
+          </div>
+
+          {/* Sync panel */}
+          {showSync&&(
+            <div style={{marginTop:12,background:"rgba(255,255,255,0.12)",borderRadius:12,padding:14}}>
+              {binId?(<>
+                <div style={{fontSize:13,color:"#fff",marginBottom:6,fontWeight:600}}>🔗 Shared Room Active</div>
+                <div style={{background:"rgba(0,0,0,0.25)",borderRadius:8,padding:"7px 10px",fontFamily:"monospace",fontSize:11,color:"#fff",wordBreak:"break-all",marginBottom:10}}>{binId}</div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={handleCopyRoomId} style={{flex:1,background:"#fff",color:"#1a73e8",border:"none",borderRadius:8,padding:"8px",fontSize:13,fontWeight:700,cursor:"pointer"}}>{justCopied?"✓ Copied!":"Copy Room ID"}</button>
+                  <button onClick={handleLeaveRoom} style={{flex:1,background:"rgba(255,255,255,0.15)",color:"#fff",border:"1px solid rgba(255,255,255,0.4)",borderRadius:8,padding:"8px",fontSize:13,cursor:"pointer"}}>Leave Room</button>
+                </div>
+              </>):(<>
+                <div style={{fontSize:13,color:"#fff",marginBottom:10,fontWeight:600}}>☁️ Set up shared access</div>
+                <button onClick={handleCreateRoom} disabled={syncStatus==="loading"} style={{width:"100%",background:"#fff",color:"#1a73e8",border:"none",borderRadius:8,padding:"10px",fontSize:14,fontWeight:700,cursor:"pointer",marginBottom:10}}>{syncStatus==="loading"?"Creating…":"✨ Create New Shared Room"}</button>
+                <div style={{fontSize:12,color:"rgba(255,255,255,0.7)",textAlign:"center",marginBottom:8}}>— or join an existing room —</div>
+                <div style={{display:"flex",gap:8}}>
+                  <input value={binInput} onChange={e=>setBinInput(e.target.value)} placeholder="Paste Room ID here" style={{flex:1,padding:"8px 10px",borderRadius:8,border:"none",fontSize:13,outline:"none"}}/>
+                  <button onClick={handleJoinRoom} disabled={!binInput.trim()||syncStatus==="loading"} style={{background:"#fff",color:"#1a73e8",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:700,cursor:"pointer"}}>Join</button>
+                </div>
+              </>)}
+              {syncError&&<div style={{color:"#ffcdd2",fontSize:12,marginTop:8}}>⚠️ {syncError}</div>}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{maxWidth:600,margin:"0 auto",padding:"12px 12px 0"}}>
+
+        {/* Add Activity button */}
+        <button onClick={()=>{setShowForm(!showForm);setForm(defaultForm);setEditId(null);setShowIconPicker(false);}}
+          style={{width:"100%",background:"#1a73e8",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:15,fontWeight:600,cursor:"pointer",marginBottom:12}}>
+          {showForm&&!editId?"✕ Cancel":"+ Add Activity"}
+        </button>
+
+        {/* Add/Edit Form */}
+        {showForm&&(
+          <div style={{background:"#fff",borderRadius:14,padding:16,marginBottom:14,boxShadow:"0 2px 12px rgba(0,0,0,0.08)"}}>
+            <h3 style={{margin:"0 0 12px",fontSize:15,color:"#1a1a2e"}}>{editId?"Edit Activity":"New Activity"}</h3>
+            <div style={{display:"flex",flexDirection:"column",gap:9}}>
+              {/* Icon picker */}
+              <div>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:showIconPicker?8:0}}>
+                  <button onClick={()=>setShowIconPicker(!showIconPicker)} style={{fontSize:24,background:"#f0f4ff",border:"2px solid #c7d7f9",borderRadius:10,padding:"5px 12px",cursor:"pointer",lineHeight:1}}>{form.icon}</button>
+                  <span style={{fontSize:12,color:"#666"}}>Tap to change icon</span>
+                </div>
+                {showIconPicker&&(
+                  <div style={{background:"#f7f8fc",border:"1px solid #e0e4f0",borderRadius:10,padding:8,display:"flex",flexWrap:"wrap",gap:5,maxHeight:160,overflowY:"auto"}}>
+                    {ICON_OPTIONS.map(ic=><button key={ic} onClick={()=>{setForm({...form,icon:ic});setShowIconPicker(false);}} style={{fontSize:20,background:form.icon===ic?"#dbeafe":"transparent",border:form.icon===ic?"2px solid #1a73e8":"2px solid transparent",borderRadius:7,padding:"3px 5px",cursor:"pointer",lineHeight:1}}>{ic}</button>)}
+                  </div>
+                )}
+              </div>
+              <input placeholder="Activity name *" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} style={inp}/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <select value={form.category} onChange={e=>setForm({...form,category:e.target.value})} style={inp}>
+                  {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+                </select>
+                <select value={form.day} onChange={e=>setForm({...form,day:e.target.value})} style={inp}>
+                  <option value="">No set day</option>
+                  {DAYS.map(d=><option key={d}>{d}</option>)}
+                </select>
+              </div>
+              {/* Recurrence */}
+              <div style={{border:"1px solid #ddd",borderRadius:8,padding:"8px 10px",background:"#fafafa"}}>
+                <div style={{fontSize:11,color:"#888",marginBottom:6}}>🔁 Recurrence</div>
+                <div style={{display:"flex",gap:6}}>
+                  {[["none","One-off"],["weekly","Weekly"]].map(([val,label])=>(
+                    <button key={val} onClick={()=>setForm({...form,recurrence:val})}
+                      style={{flex:1,padding:"6px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:600,
+                        background:(form.recurrence||"none")===val?"#1a73e8":"#e8eaf6",
+                        color:(form.recurrence||"none")===val?"#fff":"#444"}}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Start date + End date */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <div>
+                  <div style={{fontSize:11,color:"#888",marginBottom:3}}>Start date {(form.recurrence||"none")==="none"?"(optional)":"(optional)"}</div>
+                  <input type="date" value={form.date||""} onChange={e=>setForm({...form,date:e.target.value})} style={inp}/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,color:"#888",marginBottom:3}}>End date (optional)</div>
+                  <input type="date" value={form.endDate||""} onChange={e=>setForm({...form,endDate:e.target.value})} style={inp}/>
+                </div>
+              </div>
+              {/* Time range */}
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:11,color:"#888",marginBottom:3}}>Start time</div>
+                  <input type="time" value={form.time} onChange={e=>setForm({...form,time:e.target.value})} style={inp}/>
+                </div>
+                <span style={{fontSize:12,color:"#888",flexShrink:0,marginTop:16}}>→</span>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:11,color:"#888",marginBottom:3}}>End time (optional)</div>
+                  <input type="time" value={form.endTime||""} onChange={e=>setForm({...form,endTime:e.target.value})} style={inp}/>
+                </div>
+              </div>
+              <input placeholder="Location (optional)" value={form.location} onChange={e=>setForm({...form,location:e.target.value})} style={inp}/>
+              <input placeholder="Date label e.g. 2-6 Jul (optional)" value={form.dateLabel||""} onChange={e=>setForm({...form,dateLabel:e.target.value})} style={inp}/>
+              {/* Member tags */}
+              <div style={{border:"1px solid #ddd",borderRadius:8,padding:"8px 10px",background:"#fafafa"}}>
+                <div style={{fontSize:11,color:"#888",marginBottom:6}}>👤 Tag members</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                  {MEMBERS.filter(m=>m!=="Everyone").map(m=>{const sel=(form.members||[]).includes(m);return(
+                    <button key={m} onClick={()=>{const cur=form.members||[];const next=sel?cur.filter(x=>x!==m):[...cur,m];setForm({...form,members:next,member:next.length===0?"Everyone":next.join(", ")});}}
+                      style={{padding:"4px 12px",borderRadius:20,border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:sel?(MEMBER_COLORS[m]||"#1a73e8"):"#e8eaf6",color:sel?"#fff":"#444"}}>
+                      {m}
+                    </button>
+                  );})}
+                </div>
+              </div>
+              <input placeholder="Note (optional)" value={form.note} onChange={e=>setForm({...form,note:e.target.value})} style={inp}/>
+              <button onClick={handleSave} style={{background:"#1a73e8",color:"#fff",border:"none",borderRadius:10,padding:"11px",fontSize:15,fontWeight:600,cursor:"pointer"}}>{editId?"Save Changes":"Add Activity"}</button>
+            </div>
+          </div>
+        )}
+
+        {/* Selected day detail */}
+        {selectedDate&&activeTab==="month"&&(
+          <div style={{background:"#fff",borderRadius:12,padding:14,marginBottom:12,boxShadow:"0 1px 6px rgba(0,0,0,0.07)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <span style={{fontWeight:700,fontSize:14,color:"#1a1a2e"}}>
+                📅 {new Date(selectedDate+"T00:00:00").toLocaleDateString("en-SG",{weekday:"long",day:"numeric",month:"long"})}
+              </span>
+              <button onClick={()=>setSelectedDate(null)} style={{background:"none",border:"none",fontSize:18,cursor:"pointer",color:"#999"}}>✕</button>
+            </div>
+            {selectedDayEvents.length===0
+              ?<div style={{fontSize:13,color:"#aaa",textAlign:"center",padding:"12px 0"}}>No events this day</div>
+              :selectedDayEvents.map(item=><EventCard key={item.id} item={item} onEdit={handleEdit} onDelete={handleDelete}/>)
+            }
+            <button onClick={()=>{setForm({...defaultForm,date:selectedDate});setShowForm(true);setEditId(null);}} style={{width:"100%",marginTop:8,background:"#f0f4ff",color:"#1a73e8",border:"none",borderRadius:8,padding:"8px",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Add to this day</button>
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div style={{display:"flex",background:"#e8eaf6",borderRadius:12,padding:3,marginBottom:12,gap:2}}>
+          {[["month","📅 Month"],["week","🗓 Week"],["list","📋 List"],["import","📥 Import"]].map(([key,label])=>(
+            <button key={key} onClick={()=>setActiveTab(key)}
+              style={{flex:1,padding:"8px 0",border:"none",borderRadius:9,cursor:"pointer",fontSize:12,fontWeight:600,
+                background:activeTab===key?"#fff":"transparent",color:activeTab===key?"#1a73e8":"#666",
+                boxShadow:activeTab===key?"0 1px 4px rgba(0,0,0,0.1)":"none",transition:"all 0.15s"}}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* MONTH TAB */}
+        {activeTab==="month"&&(
+          <MonthView items={filteredItems} onDayClick={handleDayClick} selectedDate={selectedDate}/>
+        )}
+
+        {/* WEEK TAB */}
+        {activeTab==="week"&&(
+          <WeekView items={filteredItems} onDayClick={handleDayClick}/>
+        )}
+
+        {/* LIST TAB */}
+        {activeTab==="list"&&(<>
+          {/* Holidays strip */}
+          {filteredItems.filter(i=>i.category==="🏖️ Holiday"||i.category==="📆 Term Break").length>0&&(
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#ff7043",letterSpacing:1.2,textTransform:"uppercase",marginBottom:6}}>Holidays & Term Breaks</div>
+              {filteredItems.filter(i=>i.category==="🏖️ Holiday"||i.category==="📆 Term Break").map(item=>(
+                <div key={item.id} style={{background:COLORS[item.category],borderLeft:"4px solid "+BORDER[item.category],borderRadius:"0 10px 10px 0",padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                  <div><span style={{fontSize:16}}>{item.icon} </span><span style={{fontWeight:600,fontSize:13}}>{item.title}</span>{item.dateLabel&&<span style={{fontSize:11,color:"#666",marginLeft:6}}>📅 {item.dateLabel}</span>}</div>
+                  <div style={{display:"flex",gap:5}}>
+                    <button onClick={()=>handleEdit(item)} style={{background:"rgba(0,0,0,0.07)",border:"none",borderRadius:7,padding:"4px 8px",cursor:"pointer",fontSize:12}}>✏️</button>
+                    <button onClick={()=>handleDelete(item.id)} style={{background:"rgba(0,0,0,0.07)",border:"none",borderRadius:7,padding:"4px 8px",cursor:"pointer",fontSize:12}}>🗑</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Weekly list */}
+          {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(day=>{
+            const di=filteredItems.filter(i=>i.day===day&&i.category!=="🏖️ Holiday"&&i.category!=="📆 Term Break"&&(!i.date||(i.recurrence==="weekly")));
+            if(!di.length)return null;
+            return(
+              <div key={day} style={{marginBottom:14}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#1a73e8",letterSpacing:1.2,textTransform:"uppercase",marginBottom:6}}>{day}</div>
+                {di.map(item=><EventCard key={item.id} item={item} onEdit={handleEdit} onDelete={handleDelete}/>)}
+              </div>
+            );
+          })}
+          {filteredItems.filter(i=>i.day&&i.category!=="🏖️ Holiday"&&i.category!=="📆 Term Break").length===0&&(
+            <div style={{textAlign:"center",padding:"40px 0",color:"#999"}}><div style={{fontSize:36,marginBottom:8}}>📅</div><div>No activities yet!</div></div>
+          )}
+          {/* WhatsApp */}
+          {items.length>0&&(
+            <div style={{marginTop:20}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#888",letterSpacing:1.2,textTransform:"uppercase",marginBottom:8}}>WhatsApp Preview</div>
+              <div style={{background:"#e5ddd5",borderRadius:12,padding:14}}>
+                <div style={{background:"#fff",borderRadius:"2px 10px 10px 10px",padding:"10px 12px",display:"inline-block",maxWidth:"90%",boxShadow:"0 1px 3px rgba(0,0,0,0.1)"}}>
+                  <pre style={{margin:0,fontSize:12,fontFamily:"inherit",whiteSpace:"pre-wrap",lineHeight:1.6,color:"#1a1a1a"}}>{generateWhatsApp()}</pre>
+                </div>
+              </div>
+              <button onClick={handleCopy} style={{width:"100%",marginTop:8,background:copied?"#128C7E":"#25D366",color:"#fff",border:"none",borderRadius:10,padding:"12px",fontSize:15,fontWeight:700,cursor:"pointer"}}>
+                {copied?"✓ Copied!":"📲 Copy & Paste to WhatsApp"}
+              </button>
+            </div>
+          )}
+        </>)}
+
+        {/* IMPORT TAB */}
+        {activeTab==="import"&&(
+          <div>
+            <div style={{background:"#fff",borderRadius:14,padding:16,boxShadow:"0 2px 12px rgba(0,0,0,0.07)",marginBottom:14}}>
+              <h3 style={{margin:"0 0 6px",fontSize:15,color:"#1a1a2e"}}>📥 Import from message or file</h3>
+              <p style={{margin:"0 0 12px",fontSize:12,color:"#666"}}>Paste a WhatsApp message, or upload a screenshot, PDF, or text file.</p>
+              <div style={{border:"2px dashed #c7d7f9",borderRadius:10,padding:"14px",textAlign:"center",marginBottom:10,cursor:"pointer",background:"#f7faff"}} onClick={()=>fileRef.current.click()}>
+                <div style={{fontSize:26,marginBottom:3}}>📎</div>
+                <div style={{fontSize:13,color:"#1a73e8",fontWeight:600}}>Upload a text file</div>
+                <div style={{fontSize:11,color:"#888"}}>.txt or .csv only</div>
+                <input ref={fileRef} type="file" accept=".txt,.csv,text/plain" style={{display:"none"}} onChange={handleFileUpload}/>
+              </div>
+              <div style={{textAlign:"center",fontSize:12,color:"#aaa",margin:"8px 0"}}>— or paste text below —</div>
+              <textarea placeholder={"27 Jun 1pm - Shannon PTM\n2-6 Jul - Disney Cruise\n25 Jul - Mae & Kay Bday 10am SkyPark"} value={pastedText} onChange={e=>{setPastedText(e.target.value);setImportError("");setImportResult(null);}} rows={6} style={{...inp,resize:"vertical",lineHeight:1.6}}/>
+              {importError&&<div style={{color:"#e53935",fontSize:12,marginTop:6}}>⚠️ {importError}</div>}
+              <button onClick={handleExtract} disabled={!pastedText.trim()} style={{width:"100%",marginTop:10,background:!pastedText.trim()?"#90caf9":"#1a73e8",color:"#fff",border:"none",borderRadius:10,padding:"11px",fontSize:14,fontWeight:600,cursor:!pastedText.trim()?"default":"pointer"}}>✨ Extract Activities</button>
+            </div>
+            {importResult&&(
+              <div style={{background:"#fff",borderRadius:14,padding:16,boxShadow:"0 2px 12px rgba(0,0,0,0.07)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                  <h3 style={{margin:0,fontSize:14,color:"#1a1a2e"}}>{importResult.summary}</h3>
+                  <span style={{fontSize:11,color:"#888"}}>{selectedToAdd.length} selected</span>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:6,margin:"10px 0"}}>
+                  {importResult.activities.map((a,i)=>(
+                    <div key={i} onClick={()=>setSelectedToAdd(prev=>prev.includes(i)?prev.filter(x=>x!==i):[...prev,i])}
+                      style={{border:selectedToAdd.includes(i)?"2px solid #1a73e8":"2px solid #e8eaf6",borderRadius:10,padding:"9px 12px",cursor:"pointer",background:selectedToAdd.includes(i)?"#f0f6ff":"#fafafa",display:"flex",gap:10,alignItems:"flex-start"}}>
+                      <span style={{fontSize:20,marginTop:1}}>{a.icon}</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:600,fontSize:13,color:"#1a1a2e"}}>{a.title}</div>
+                        <div style={{fontSize:11,color:"#666",marginTop:2,display:"flex",gap:6,flexWrap:"wrap"}}>
+                          <span style={{background:"#e8eaf6",padding:"1px 6px",borderRadius:7}}>{a.category}</span>
+                          {a.dateLabel&&<span>📅 {a.dateLabel}</span>}
+                          {a.day&&<span>📅 {a.day}</span>}
+                          {a.time&&<span>🕐 {a.time}{a.endTime?" – "+a.endTime:""}</span>}
+                          {a.member!=="Everyone"&&<MemberTag name={a.member} small/>}
+                        </div>
+                      </div>
+                      <span style={{fontSize:16}}>{selectedToAdd.includes(i)?"✅":"⬜"}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>setSelectedToAdd(importResult.activities.map((_,i)=>i))} style={{flex:1,background:"#e8eaf6",color:"#444",border:"none",borderRadius:10,padding:"9px",fontSize:13,fontWeight:600,cursor:"pointer"}}>Select All</button>
+                  <button onClick={handleAddSelected} disabled={selectedToAdd.length===0} style={{flex:2,background:selectedToAdd.length===0?"#90caf9":"#1a73e8",color:"#fff",border:"none",borderRadius:10,padding:"9px",fontSize:13,fontWeight:700,cursor:selectedToAdd.length===0?"default":"pointer"}}>➕ Add {selectedToAdd.length} to Schedule</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
