@@ -43,6 +43,22 @@ const BORDER={"⚽ Sport":"#66bb6a","📚 Class":"#42a5f5","🏥 Appointment":"#
 const MEMBER_COLORS={"Shannon":"#e91e63","Wei":"#1a73e8","Mae":"#9c27b0","Kay":"#ff9800","Everyone":"#607d8b"};
 const CAT_ICONS={"⚽ Sport":"⚽","📚 Class":"📚","🏥 Appointment":"🏥","🎉 Event":"🎉","🧹 Chore":"🧹","📌 Other":"📌","🏖️ Holiday":"🏖️","📆 Term Break":"📆"};
 const defaultForm={title:"",category:"⚽ Sport",icon:"⚽",day:"Mon",date:"",endDate:"",time:"",endTime:"",recurrence:"none",location:"",member:"Everyone",members:[],note:"",dateLabel:""};
+function fmtDateNice(d){if(!d)return"";const[y,m,day]=d.split("-");const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];return parseInt(day)+" "+months[parseInt(m)-1]+" "+y;}
+function autoDateLabel(date,endDate){
+  if(date&&endDate){
+    const[y1,m1,d1]=date.split("-");const[y2,m2,d2]=endDate.split("-");
+    const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const mon1=months[parseInt(m1)-1];const mon2=months[parseInt(m2)-1];
+    // same month: "2-6 Jul" or "2-6 Jul 2026" if different year
+    if(m1===m2&&y1===y2)return parseInt(d1)+"-"+parseInt(d2)+" "+mon1;
+    // different month same year: "24 Jun – 6 Jul"
+    if(y1===y2)return parseInt(d1)+" "+mon1+" – "+parseInt(d2)+" "+mon2;
+    // different year: "30 Dec 2026 – 2 Jan 2027"
+    return parseInt(d1)+" "+mon1+" "+y1+" – "+parseInt(d2)+" "+mon2+" "+y2;
+  }
+  if(date)return fmtDateNice(date);
+  return "";
+}
 function loadRecentIcons(){try{return JSON.parse(localStorage.getItem("recentIcons")||"[]");}catch(e){return[];}}
 function saveRecentIcon(icon){try{const r=loadRecentIcons();const updated=[icon,...r.filter(i=>i!==icon)].slice(0,5);localStorage.setItem("recentIcons",JSON.stringify(updated));}catch(e){}}
 const inp={padding:"10px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:14,outline:"none",width:"100%",boxSizing:"border-box",background:"#fafafa"};
@@ -494,12 +510,15 @@ function App(){
                   <input type="date" value={form.date||""} onChange={e=>{
                     const val=e.target.value;
                     const dow=val?["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(val+"T00:00:00").getDay()]:"";
-                    setForm({...form,date:val,day:dow||form.day});
+                    setForm({...form,date:val,day:dow||form.day,dateLabel:autoDateLabel(val,form.endDate)});
                   }} style={inp}/>
                 </div>
                 <div>
                   <div style={{fontSize:11,color:"#888",marginBottom:3}}>End date (optional)</div>
-                  <input type="date" value={form.endDate||""} onChange={e=>setForm({...form,endDate:e.target.value})} style={inp}/>
+                  <input type="date" value={form.endDate||""} onChange={e=>{
+                    const val=e.target.value;
+                    setForm({...form,endDate:val,dateLabel:autoDateLabel(form.date,val)});
+                  }} style={inp}/>
                 </div>
               </div>
               {/* Time range */}
