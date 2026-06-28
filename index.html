@@ -33,15 +33,15 @@ function localSave(d){try{localStorage.setItem("ftItems",JSON.stringify(d));}cat
 function localLoad(){try{const r=localStorage.getItem("ftItems");return r?JSON.parse(r):null;}catch(e){return null;}}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const CATEGORIES=["⚽ Sport","📚 Class","🏥 Appointment","🎉 Event","🧹 Chore","📌 Other","🏖️ Holiday","📆 Term Break"];
+const CATEGORIES=["⚽ Sport","📚 Class","🏥 Appointment","🎉 Event","💼 Work Travel","🧹 Chore","📌 Other","🏖️ Holiday","📆 Term Break"];
 const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 const MEMBERS=["Everyone","Shannon","Wei","Mae","Kay"];
 const MONTH_NAMES=["January","February","March","April","May","June","July","August","September","October","November","December"];
-const ICON_OPTIONS=["⚽","🏀","🎾","🏊","🚴","🏋️","🤸","⛷️","🎹","📚","✏️","🎨","🎭","🎸","🎺","🎻","🎤","📖","🏥","💊","🦷","❤️","🩹","🎉","🎂","🎁","🎊","🥳","🎈","🪅","🧹","🍳","🛒","🚗","🏠","🌿","🐕","🐈","📌","⭐","🔔","📅","💡","📝","🗓️","📋","🌍","✈️","🏖️","⛺","🎯","🏆","🥇","🎮","🧩","🎲","🚢","🎠","🌳","👧","🤖","📋","🛒","💃","🎵","🏃"];
-const COLORS={"⚽ Sport":"#e8f5e9","📚 Class":"#e3f2fd","🏥 Appointment":"#fce4ec","🎉 Event":"#fff8e1","🧹 Chore":"#f3e5f5","📌 Other":"#f5f5f5","🏖️ Holiday":"#fff3e0","📆 Term Break":"#e0f7fa"};
-const BORDER={"⚽ Sport":"#66bb6a","📚 Class":"#42a5f5","🏥 Appointment":"#ef5350","🎉 Event":"#ffa726","🧹 Chore":"#ab47bc","📌 Other":"#bdbdbd","🏖️ Holiday":"#ff7043","📆 Term Break":"#26a69a"};
+const ICON_OPTIONS=["⚽","🏀","🎾","🏊","🚴","🏋️","🤸","⛷️","🎹","📚","✏️","🎨","🎭","🎸","🎺","🎻","🎤","📖","🏥","💊","🦷","❤️","🩹","🎉","🎂","🎁","🎊","🥳","🎈","🪅","🧹","🍳","🛒","🚗","🏠","🌿","🐕","🐈","📌","⭐","🔔","📅","💡","📝","🗓️","📋","🌍","✈️","🏖️","⛺","🎯","🏆","🥇","🎮","🧩","🎲","🚢","🎠","🌳","👧","🤖","📋","🛒","💃","🎵","🏃","💼"];
+const COLORS={"⚽ Sport":"#e8f5e9","📚 Class":"#e3f2fd","🏥 Appointment":"#fce4ec","🎉 Event":"#fff8e1","💼 Work Travel":"#ede7f6","🧹 Chore":"#f3e5f5","📌 Other":"#f5f5f5","🏖️ Holiday":"#fff3e0","📆 Term Break":"#e0f7fa"};
+const BORDER={"⚽ Sport":"#66bb6a","📚 Class":"#42a5f5","🏥 Appointment":"#ef5350","🎉 Event":"#ffa726","💼 Work Travel":"#7e57c2","🧹 Chore":"#ab47bc","📌 Other":"#bdbdbd","🏖️ Holiday":"#ff7043","📆 Term Break":"#26a69a"};
 const MEMBER_COLORS={"Shannon":"#e91e63","Wei":"#1a73e8","Mae":"#9c27b0","Kay":"#ff9800","Everyone":"#607d8b"};
-const CAT_ICONS={"⚽ Sport":"⚽","📚 Class":"📚","🏥 Appointment":"🏥","🎉 Event":"🎉","🧹 Chore":"🧹","📌 Other":"📌","🏖️ Holiday":"🏖️","📆 Term Break":"📆"};
+const CAT_ICONS={"⚽ Sport":"⚽","📚 Class":"📚","🏥 Appointment":"🏥","🎉 Event":"🎉","💼 Work Travel":"💼","🧹 Chore":"🧹","📌 Other":"📌","🏖️ Holiday":"🏖️","📆 Term Break":"📆"};
 const defaultForm={title:"",category:"⚽ Sport",icon:"⚽",day:"Mon",date:"",endDate:"",time:"",endTime:"",recurrence:"none",location:"",member:"Everyone",members:[],note:"",dateLabel:""};
 function fmtDateNice(d){if(!d)return"";const[y,m,day]=d.split("-");const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];return parseInt(day)+" "+months[parseInt(m)-1]+" "+y;}
 function autoDateLabel(date,endDate){
@@ -67,8 +67,8 @@ const inp={padding:"10px 12px",borderRadius:8,border:"1px solid #ddd",fontSize:1
 const MONTH_MAP={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11,january:0,february:1,march:2,april:3,june:5,july:6,august:7,september:8,october:9,november:10,december:11};
 const DAY_NAMES={mon:"Mon",tue:"Tue",wed:"Wed",thu:"Thu",fri:"Fri",sat:"Sat",sun:"Sun",monday:"Mon",tuesday:"Tue",wednesday:"Wed",thursday:"Thu",friday:"Fri",saturday:"Sat",sunday:"Sun"};
 function parseTime(s){const m=s.match(/(\d{1,2})[.:h]?(\d{2})?\s*(am|pm)?/i);if(!m)return"";let h=parseInt(m[1]);const min=m[2]||"00";const mer=(m[3]||"").toLowerCase();if(mer==="pm"&&h<12)h+=12;if(mer==="am"&&h===12)h=0;return String(h).padStart(2,"0")+":"+min;}
-function detectCat(t){const l=t.toLowerCase();if(/cruise|disney|trip|vacation|bday|birthday|party|playdate|play\s*date|scout|camp/.test(l))return"🎉 Event";if(/term\s*break|school\s*break/.test(l))return"📆 Term Break";if(/public\s*holi|ph\b/.test(l))return"🏖️ Holiday";if(/gym|gymnastic|swim|tennis|soccer|football|rugby|basketball|sport|training|practice/.test(l))return"⚽ Sport";if(/piano|class|lesson|tutor|ptm|parent|teacher|meeting/.test(l))return"📚 Class";if(/doctor|dentist|appoint|clinic|hospital/.test(l))return"🏥 Appointment";if(/chore|clean|grocery|laundry|errand/.test(l))return"🧹 Chore";return"📌 Other";}
-function detectIcon(t,cat){const l=t.toLowerCase();const map=[[/piano/,"🎹"],[/swim/,"🏊"],[/gym|gymnastic/,"🤸"],[/soccer|football/,"⚽"],[/basketball/,"🏀"],[/tennis/,"🎾"],[/cruise|ship/,"🚢"],[/disney/,"🎠"],[/scout|forest|camp/,"🌳"],[/bday|birthday/,"🎂"],[/party/,"🎉"],[/playdate|play\s*date/,"👧"],[/robot/,"🤖"],[/doctor/,"🏥"],[/dentist/,"🦷"],[/meeting|ptm/,"📋"],[/grocery/,"🛒"],[/dance/,"💃"],[/music/,"🎵"],[/park|skypark/,"🌳"],[/travel|flight/,"✈️"]];for(const[r,i]of map)if(r.test(l))return i;return{"⚽ Sport":"⚽","📚 Class":"📚","🏥 Appointment":"🏥","🎉 Event":"🎉","🧹 Chore":"🧹","📌 Other":"📌","🏖️ Holiday":"🏖️","📆 Term Break":"📆"}[cat]||"📌";}
+function detectCat(t){const l=t.toLowerCase();if(/work.travel|business.trip|work.trip|conference|BKK|bangkok|KL|kuala|jakarta|overseas|work/.test(l))return"💼 Work Travel";if(/cruise|disney|trip|vacation|bday|birthday|party|playdate|play\s*date|scout|camp/.test(l))return"🎉 Event";if(/term\s*break|school\s*break/.test(l))return"📆 Term Break";if(/public\s*holi|ph\b/.test(l))return"🏖️ Holiday";if(/gym|gymnastic|swim|tennis|soccer|football|rugby|basketball|sport|training|practice/.test(l))return"⚽ Sport";if(/piano|class|lesson|tutor|ptm|parent|teacher|meeting/.test(l))return"📚 Class";if(/doctor|dentist|appoint|clinic|hospital/.test(l))return"🏥 Appointment";if(/chore|clean|grocery|laundry|errand/.test(l))return"🧹 Chore";return"📌 Other";}
+function detectIcon(t,cat){const l=t.toLowerCase();const map=[[/piano/,"🎹"],[/swim/,"🏊"],[/gym|gymnastic/,"🤸"],[/soccer|football/,"⚽"],[/basketball/,"🏀"],[/tennis/,"🎾"],[/cruise|ship/,"🚢"],[/disney/,"🎠"],[/scout|forest|camp/,"🌳"],[/bday|birthday/,"🎂"],[/party/,"🎉"],[/playdate|play\s*date/,"👧"],[/robot/,"🤖"],[/doctor/,"🏥"],[/dentist/,"🦷"],[/meeting|ptm/,"📋"],[/grocery/,"🛒"],[/dance/,"💃"],[/music/,"🎵"],[/park|skypark/,"🌳"],[/travel|flight/,"✈️"],[/work.travel|business|conference/,"💼"]];for(const[r,i]of map)if(r.test(l))return i;return{"⚽ Sport":"⚽","📚 Class":"📚","🏥 Appointment":"🏥","🎉 Event":"🎉","🧹 Chore":"🧹","📌 Other":"📌","🏖️ Holiday":"🏖️","📆 Term Break":"📆"}[cat]||"📌";}
 function getDOW(d,mon){const idx=MONTH_MAP[mon.toLowerCase()];if(idx===undefined)return"";return["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(new Date().getFullYear(),idx,parseInt(d)).getDay()];}
 function getDateStr(d,mon){const idx=MONTH_MAP[mon.toLowerCase()];if(idx===undefined)return"";const yr=new Date().getFullYear();return yr+"-"+String(idx+1).padStart(2,"0")+"-"+String(parseInt(d)).padStart(2,"0");}
 function parseLine(line){
@@ -595,10 +595,25 @@ function App(){
         {/* LIST TAB */}
         {activeTab==="list"&&(<>
           {/* Holidays strip */}
-          {filteredItems.filter(i=>i.category==="🏖️ Holiday"||i.category==="📆 Term Break").length>0&&(
+          {(()=>{
+            const todayStr=new Date().toISOString().slice(0,10);
+            const specials=filteredItems
+              .filter(i=>i.category==="🏖️ Holiday"||i.category==="📆 Term Break")
+              .filter(i=>{
+                // keep if end date is today or future, or start date is today or future, or no date set
+                const endD=i.endDate||i.date;
+                return !endD||(endD>=todayStr);
+              })
+              .sort((a,b)=>{
+                const da=a.date||a.dateLabel||"9999";
+                const db=b.date||b.dateLabel||"9999";
+                return da.localeCompare(db);
+              });
+            if(!specials.length)return null;
+            return(
             <div style={{marginBottom:14}}>
               <div style={{fontSize:11,fontWeight:700,color:"#ff7043",letterSpacing:1.2,textTransform:"uppercase",marginBottom:6}}>Holidays & Term Breaks</div>
-              {filteredItems.filter(i=>i.category==="🏖️ Holiday"||i.category==="📆 Term Break").map(item=>(
+              {specials.map(item=>(
                 <div key={item.id} style={{background:COLORS[item.category],borderLeft:"4px solid "+BORDER[item.category],borderRadius:"0 10px 10px 0",padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
                   <div><span style={{fontSize:16}}>{item.icon} </span><span style={{fontWeight:600,fontSize:13}}>{item.title}</span>{item.dateLabel&&<span style={{fontSize:11,color:"#666",marginLeft:6}}>📅 {item.dateLabel}</span>}</div>
                   <div style={{display:"flex",gap:5}}>
@@ -608,10 +623,25 @@ function App(){
                 </div>
               ))}
             </div>
-          )}
+            );
+          })()}
           {/* Weekly list */}
           {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(day=>{
-            const di=filteredItems.filter(i=>i.day===day&&i.category!=="🏖️ Holiday"&&i.category!=="📆 Term Break"&&(!i.date||(i.recurrence==="weekly")));
+            const todayStr2=new Date().toISOString().slice(0,10);
+            const di=filteredItems.filter(i=>{
+              if(i.category==="🏖️ Holiday"||i.category==="📆 Term Break")return false;
+              if(i.day!==day)return false;
+              // weekly recurrence - always show (no expiry unless end date set)
+              if(i.recurrence==="weekly"){
+                return !i.endDate||(i.endDate>=todayStr2);
+              }
+              // one-off with specific date - hide if date has passed
+              if(i.date&&!i.endDate)return i.date>=todayStr2;
+              // date range - hide if end date passed
+              if(i.date&&i.endDate)return i.endDate>=todayStr2;
+              // no date set - always show
+              return true;
+            });
             if(!di.length)return null;
             return(
               <div key={day} style={{marginBottom:14}}>
