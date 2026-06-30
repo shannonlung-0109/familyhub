@@ -32,6 +32,7 @@ const firebaseConfig = {
 };
 try{
   firebase.initializeApp(firebaseConfig);
+firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(function(e){console.error("Persistence error:",e);});
 }catch(e){
   document.addEventListener("DOMContentLoaded",function(){
     document.getElementById("root").innerHTML="<div style='padding:30px;text-align:center;color:#e53935;font-family:sans-serif;'><h2>Setup Error</h2><p>"+e.message+"</p></div>";
@@ -341,7 +342,13 @@ function AuthGate({children}){
   const [authError,setAuthError]=useState("");
 
   useEffect(()=>{
-    const unsub=firebase.auth().onAuthStateChanged(u=>setUser(u));
+    // Explicitly capture redirect result first (handles Safari/mobile redirect flow)
+    firebase.auth().getRedirectResult().catch(e=>{
+      if(e&&e.message)setAuthError(e.message);
+    });
+    const unsub=firebase.auth().onAuthStateChanged(u=>{
+      setUser(u);
+    });
     return()=>unsub();
   },[]);
 
