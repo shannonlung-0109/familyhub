@@ -340,16 +340,26 @@ function WeekView({items,onDayClick}){
 function AuthGate({children}){
   const [user,setUser]=useState(undefined); // undefined=loading, null=signed out, object=signed in
   const [authError,setAuthError]=useState("");
+  const [redirectChecked,setRedirectChecked]=useState(false);
 
   useEffect(()=>{
-    // Explicitly capture redirect result first (handles Safari/mobile redirect flow)
-    firebase.auth().getRedirectResult().catch(e=>{
-      if(e&&e.message)setAuthError(e.message);
+    let mounted=true;
+    // Wait for redirect result BEFORE setting up the auth state listener
+    firebase.auth().getRedirectResult().then(result=>{
+      if(mounted){
+        if(result&&result.user)setUser(result.user);
+        setRedirectChecked(true);
+      }
+    }).catch(e=>{
+      if(mounted){
+        setAuthError("Redirect error: "+(e.message||e.code||"unknown"));
+        setRedirectChecked(true);
+      }
     });
     const unsub=firebase.auth().onAuthStateChanged(u=>{
-      setUser(u);
+      if(mounted)setUser(u);
     });
-    return()=>unsub();
+    return()=>{mounted=false;unsub();};
   },[]);
 
   const handleSignIn=()=>{
@@ -381,6 +391,7 @@ function AuthGate({children}){
             <span style={{fontSize:18}}>🔐</span> Sign in with Google
           </button>
           {authError&&<div style={{color:"#e53935",fontSize:13,marginTop:14}}>⚠️ {authError}</div>}
+          <div style={{fontSize:10,color:"#aaa",marginTop:14}}>Debug: redirectChecked={String(redirectChecked)}, currentUser={firebase.auth().currentUser?firebase.auth().currentUser.email:"none"}</div>
         </div>
       </div>
     );
