@@ -337,44 +337,68 @@ function WeekView({items,onDayClick}){
 }
 
 // ── Main App ──────────────────────────────────────────────────────────────────
+const EMAIL_LINK_KEY="familyHubEmailForSignIn";
+
 function AuthGate({children}){
   const [user,setUser]=useState(undefined); // undefined=loading, null=signed out, object=signed in
   const [authError,setAuthError]=useState("");
-  const [redirectChecked,setRedirectChecked]=useState(false);
+  const [authMsg,setAuthMsg]=useState("");
+  const [email,setEmail]=useState("");
+  const [linkSent,setLinkSent]=useState(false);
+  const [completing,setCompleting]=useState(false);
 
   useEffect(()=>{
     let mounted=true;
-    // Wait for redirect result BEFORE setting up the auth state listener
-    firebase.auth().getRedirectResult().then(result=>{
-      if(mounted){
-        if(result&&result.user)setUser(result.user);
-        setRedirectChecked(true);
+
+    // Check if this page load is the result of clicking the email sign-in link
+    if(firebase.auth().isSignInWithEmailLink(window.location.href)){
+      setCompleting(true);
+      let storedEmail=null;
+      try{storedEmail=window.localStorage.getItem(EMAIL_LINK_KEY);}catch(e){}
+      if(!storedEmail){
+        storedEmail=window.prompt("Please confirm your email to complete sign-in:");
       }
-    }).catch(e=>{
-      if(mounted){
-        setAuthError("Redirect error: "+(e.message||e.code||"unknown"));
-        setRedirectChecked(true);
-      }
-    });
+      firebase.auth().signInWithEmailLink(storedEmail,window.location.href).then(result=>{
+        try{window.localStorage.removeItem(EMAIL_LINK_KEY);}catch(e){}
+        // Clean the URL so the link params don't linger
+        window.history.replaceState({}, document.title, window.location.pathname);
+        if(mounted){setUser(result.user);setCompleting(false);}
+      }).catch(e=>{
+        if(mounted){setAuthError("Sign-in link error: "+(e.message||e.code||"unknown"));setCompleting(false);}
+      });
+    }
+
     const unsub=firebase.auth().onAuthStateChanged(u=>{
       if(mounted)setUser(u);
     });
     return()=>{mounted=false;unsub();};
   },[]);
 
-  const handleSignIn=()=>{
-    setAuthError("");
-    const provider=new firebase.auth.GoogleAuthProvider();
-    firebase.auth().signInWithRedirect(provider).catch(e=>setAuthError(e.message));
+  const handleSendLink=()=>{
+    setAuthError("");setAuthMsg("");
+    const trimmed=email.trim();
+    if(!trimmed||!trimmed.includes("@")){setAuthError("Please enter a valid email address.");return;}
+    const actionCodeSettings={
+      url: window.location.href.split("?")[0],
+      handleCodeInApp: true,
+    };
+    firebase.auth().sendSignInLinkToEmail(trimmed,actionCodeSettings).then(()=>{
+      try{window.localStorage.setItem(EMAIL_LINK_KEY,trimmed);}catch(e){}
+      setLinkSent(true);
+      setAuthMsg("Check your inbox at "+trimmed+" and tap the sign-in link.");
+    }).catch(e=>{
+      setAuthError(e.message||"Could not send sign-in link.");
+    });
   };
+
   const handleSignOut=()=>firebase.auth().signOut();
 
-  if(user===undefined){
+  if(user===undefined||completing){
     return(
       <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",background:"#f7f8fc"}}>
         <div style={{textAlign:"center",color:"#888"}}>
           <div style={{fontSize:32,marginBottom:10}}>⏳</div>
-          <div>Loading…</div>
+          <div>{completing?"Completing sign-in…":"Loading…"}</div>
         </div>
       </div>
     );
@@ -386,12 +410,27 @@ function AuthGate({children}){
         <div style={{background:"#fff",borderRadius:18,padding:32,maxWidth:380,width:"100%",textAlign:"center",boxShadow:"0 8px 30px rgba(0,0,0,0.2)"}}>
           <div style={{fontSize:13,color:"#888",letterSpacing:1,textTransform:"uppercase",marginBottom:4}}>Family Hub</div>
           <h1 style={{margin:"0 0 8px",fontSize:24,color:"#1a1a2e"}}>Weekly Planner</h1>
-          <p style={{margin:"0 0 24px",fontSize:14,color:"#666"}}>Sign in with Google to access your family schedule.</p>
-          <button onClick={handleSignIn} style={{width:"100%",background:"#1a73e8",color:"#fff",border:"none",borderRadius:10,padding:"13px",fontSize:15,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-            <span style={{fontSize:18}}>🔐</span> Sign in with Google
-          </button>
+          <p style={{margin:"0 0 24px",fontSize:14,color:"#666"}}>Sign in with your email to access your family schedule.</p>
+
+          {linkSent ? (
+            <div style={{background:"#e8f5e9",borderRadius:10,padding:16,fontSize:14,color:"#2e7d32"}}>
+              ✅ {authMsg}
+              <div style={{fontSize:12,color:"#558b2f",marginTop:8}}>Open the email on this same device and tap the link.</div>
+            </div>
+          ) : (<>
+            <input
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={e=>setEmail(e.target.value)}
+              style={{width:"100%",padding:"12px 14px",borderRadius:10,border:"1px solid #ddd",fontSize:15,marginBottom:12,outline:"none",boxSizing:"border-box"}}
+            />
+            <button onClick={handleSendLink} style={{width:"100%",background:"#1a73e8",color:"#fff",border:"none",borderRadius:10,padding:"13px",fontSize:15,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+              <span style={{fontSize:18}}>✉️</span> Send me a sign-in link
+            </button>
+          </>)}
+
           {authError&&<div style={{color:"#e53935",fontSize:13,marginTop:14}}>⚠️ {authError}</div>}
-          <div style={{fontSize:10,color:"#aaa",marginTop:14}}>Debug: redirectChecked={String(redirectChecked)}, currentUser={firebase.auth().currentUser?firebase.auth().currentUser.email:"none"}</div>
         </div>
       </div>
     );
