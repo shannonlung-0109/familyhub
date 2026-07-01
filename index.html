@@ -214,7 +214,7 @@ function EventCard({item,onEdit,onDelete,compact}){
         <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
           <span style={{fontSize:compact?16:20}}>{item.icon}</span>
           <span style={{fontSize:compact?13:15,fontWeight:600,color:"#1a1a2e",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.title}</span>
-          {mems.filter(m=>m!=="Everyone").map(m=><MemberTag key={m} name={m} small={compact}/>)}
+          {(item.members&&item.members.length>0)?item.members.map(m=><MemberTag key={m} name={m} small={compact}/>):<span style={{background:"#60758022",color:"#607d8b",border:"1px solid #60758044",borderRadius:20,padding:compact?"1px 6px":"2px 8px",fontSize:compact?10:12,fontWeight:600}}>All</span>}
         </div>
         {!compact&&<div style={{fontSize:12,color:"#555",marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
           {item.time&&<span>🕐 {item.time}{item.endTime?" – "+item.endTime:""}</span>}
@@ -229,6 +229,54 @@ function EventCard({item,onEdit,onDelete,compact}){
         <button onClick={()=>onEdit(item)} style={{background:"rgba(0,0,0,0.07)",border:"none",borderRadius:7,padding:"5px 8px",cursor:"pointer",fontSize:13}}>✏️</button>
         <button onClick={()=>onDelete(item.id)} style={{background:"rgba(0,0,0,0.07)",border:"none",borderRadius:7,padding:"5px 8px",cursor:"pointer",fontSize:13}}>🗑</button>
       </div>}
+    </div>
+  );
+}
+
+// ── Conflict detection ────────────────────────────────────────────────────────
+function timeToMins(t){if(!t)return null;const[h,m]=t.split(":").map(Number);return h*60+m;}
+
+function detectConflicts(evts){
+  // evts = all events on a given day
+  const conflicts=[];
+  for(let i=0;i<evts.length;i++){
+    for(let j=i+1;j<evts.length;j++){
+      const a=evts[i],b=evts[j];
+      // Get members for each
+      const aMems=a.members&&a.members.length>0?a.members:(a.member&&a.member!=="Everyone"?[a.member]:["Everyone"]);
+      const bMems=b.members&&b.members.length>0?b.members:(b.member&&b.member!=="Everyone"?[b.member]:["Everyone"]);
+      // Check member overlap
+      const sharedMembers=aMems[0]==="Everyone"||bMems[0]==="Everyone"
+        ?["Everyone"]
+        :aMems.filter(m=>bMems.includes(m));
+      if(sharedMembers.length===0)continue;
+      // Strict time conflict
+      const aStart=timeToMins(a.time),aEnd=timeToMins(a.endTime||a.time);
+      const bStart=timeToMins(b.time),bEnd=timeToMins(b.endTime||b.time);
+      let timeConflict=false;
+      if(aStart!==null&&bStart!==null){
+        timeConflict=aStart<=(bEnd||bStart)&&(aEnd||aStart)>=bStart;
+      }
+      // Same day conflict (either has no time)
+      const sameDayConflict=!timeConflict;
+      conflicts.push({a,b,sharedMembers,timeConflict,sameDayConflict});
+    }
+  }
+  return conflicts;
+}
+
+function ConflictBanner({conflicts}){
+  if(!conflicts||conflicts.length===0)return null;
+  return(
+    <div style={{background:"#fff8e1",border:"1px solid #ffcc02",borderRadius:10,padding:"10px 14px",marginBottom:10}}>
+      <div style={{fontSize:12,fontWeight:700,color:"#e65100",marginBottom:6}}>⚠️ Schedule Conflicts Detected</div>
+      {conflicts.map((c,i)=>(
+        <div key={i} style={{fontSize:12,color:"#5d4037",marginBottom:4,paddingLeft:8,borderLeft:"3px solid #ffa726"}}>
+          <span style={{fontWeight:600}}>{c.a.title}</span> & <span style={{fontWeight:600}}>{c.b.title}</span>
+          {" — "}{c.sharedMembers[0]==="Everyone"?"all members":c.sharedMembers.join(", ")}
+          {c.timeConflict?" (overlapping times)":" (same day)"}
+        </div>
+      ))}
     </div>
   );
 }
@@ -252,31 +300,37 @@ function MonthView({items,onDayClick,selectedDate}){
         <span style={{fontWeight:700,fontSize:16,color:"#1a1a2e"}}>{MONTH_NAMES[viewMonth]} {viewYear}</span>
         <button onClick={()=>{if(viewMonth===11){setViewMonth(0);setViewYear(y=>y+1);}else setViewMonth(m=>m+1);}} style={{background:"#e8eaf6",border:"none",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:16}}>›</button>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",background:"#e8eaf6",border:"1px solid #e8eaf6",borderRadius:"10px 10px 0 0",overflow:"hidden"}}>
+      <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",background:"#e8eaf6",border:"1px solid #e8eaf6",borderRadius:"10px 10px 0 0",overflow:"hidden",minWidth:320}}>
         {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(
-          <div key={d} style={{textAlign:"center",fontSize:11,fontWeight:700,color:"#888",padding:"6px 2px",background:"#f7f8fc",borderRight:"1px solid #e8eaf6"}}>{d}</div>
+          <div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:"#888",padding:"6px 1px",background:"#f7f8fc",borderRight:"1px solid #e8eaf6"}}>{d}</div>
         ))}
         {cells.map((day,i)=>{
           if(!day)return<div key={"e"+i} style={{background:"#fafafa",borderRight:"1px solid #e8eaf6",borderBottom:"1px solid #e8eaf6",minHeight:60}}/>;
           const dateStr=viewYear+"-"+String(viewMonth+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");
           const evts=itemsForDate(items,dateStr);
+          const hasConflict=detectConflicts(evts).length>0;
           const isToday=dateStr===todayStr;
           const isSel=dateStr===selectedDate;
           return(
             <div key={day} className="cal-day" onClick={()=>onDayClick(dateStr)}
-              style={{background:isSel?"#e8f0fe":isToday?"#fff8e1":"#fff",borderRight:"1px solid #e8eaf6",borderBottom:"1px solid #e8eaf6",minHeight:60,padding:3,cursor:"pointer"}}>
-              <div style={{fontSize:12,fontWeight:isToday?700:400,color:isToday?"#1a73e8":isSel?"#1a73e8":"#333",width:20,height:20,borderRadius:"50%",background:isToday?"#1a73e8":"transparent",color:isToday?"#fff":"inherit",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:2}}>{day}</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:1}}>
+              style={{background:isSel?"#e8f0fe":isToday?"#fff8e1":"#fff",borderRight:"1px solid #e8eaf6",borderBottom:"1px solid #e8eaf6",minHeight:60,padding:2,cursor:"pointer",overflow:"hidden",minWidth:0}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div style={{fontSize:11,fontWeight:isToday?700:400,color:isToday?"#1a73e8":isSel?"#1a73e8":"#333",width:18,height:18,borderRadius:"50%",background:isToday?"#1a73e8":"transparent",color:isToday?"#fff":"inherit",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:2}}>{day}</div>
+                {hasConflict&&<span style={{fontSize:8,lineHeight:1}}>⚠️</span>}
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:1,overflow:"hidden"}}>
                 {evts.slice(0,3).map((e,ei)=>(
-                  <div key={ei} style={{background:BORDER[e.category]||"#999",borderRadius:2,fontSize:9,color:"#fff",padding:"1px 3px",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.4}}>
-                    {e.icon} {e.title}
+                  <div key={ei} style={{background:BORDER[e.category]||"#999",borderRadius:2,fontSize:8,color:"#fff",padding:"1px 2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.4,maxWidth:"100%"}}>
+                    {e.icon}
                   </div>
                 ))}
-                {evts.length>3&&<div style={{fontSize:9,color:"#888"}}>+{evts.length-3}</div>}
+                {evts.length>3&&<div style={{fontSize:8,color:"#888"}}>+{evts.length-3}</div>}
               </div>
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );
@@ -315,18 +369,19 @@ function WeekView({items,onDayClick}){
                 <div style={{fontSize:10,color:"#aaa"}}>{month}</div>
               </div>
               <div style={{flex:1,paddingLeft:10}}>
-                {events.length===0?<div style={{fontSize:12,color:"#ccc",paddingTop:6}}>No events</div>:
-                  events.map(e=>(
+                {events.length===0?<div style={{fontSize:12,color:"#ccc",paddingTop:6}}>No events</div>:<>
+                  {detectConflicts(events).length>0&&<div style={{fontSize:11,color:"#e65100",fontWeight:600,marginBottom:4}}>⚠️ {detectConflicts(events).length} conflict{detectConflicts(events).length>1?"s":""} — tap to view</div>}
+                  {events.map(e=>(
                     <div key={e.id} style={{background:COLORS[e.category]||"#f5",borderLeft:"3px solid "+(BORDER[e.category]||"#bbb"),borderRadius:"0 8px 8px 0",padding:"4px 8px",marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
                       <span style={{fontSize:14}}>{e.icon}</span>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:13,fontWeight:600,color:"#1a1a2e",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.title}</div>
                         {e.time&&<div style={{fontSize:11,color:"#666"}}>🕐 {e.time}{e.endTime?" – "+e.endTime:""}</div>}
                       </div>
-                      {(e.members||[]).filter(m=>m!=="Everyone").map(m=><MemberTag key={m} name={m} small/>)}
+                      {(e.members&&e.members.length>0)?e.members.map(m=><MemberTag key={m} name={m} small/>):<span style={{background:"#60758022",color:"#607d8b",border:"1px solid #60758044",borderRadius:20,padding:"1px 6px",fontSize:10,fontWeight:600}}>All</span>}
                     </div>
-                  ))
-                }
+                  ))}
+                </>}
               </div>
             </div>
           );
@@ -728,6 +783,7 @@ function App({user,signOut}){
               </span>
               <button onClick={()=>setSelectedDate(null)} style={{background:"none",border:"none",fontSize:18,cursor:"pointer",color:"#999"}}>✕</button>
             </div>
+            <ConflictBanner conflicts={detectConflicts(selectedDayEvents)}/>
             {selectedDayEvents.length===0
               ?<div style={{fontSize:13,color:"#aaa",textAlign:"center",padding:"12px 0"}}>No events this day</div>
               :selectedDayEvents.map(item=><EventCard key={item.id} item={item} onEdit={handleEdit} onDelete={handleDelete}/>)
